@@ -10,15 +10,20 @@ def freq_sweep():
         # Connect to the instrument
         rm = visa.ResourceManager()
 
-        rm.list_resources()
-        ('ASRL1::INSTR', 'ASRL2::INSTR', 'GPIB0::82::INSTR')
-        inst = rm.open_resource('GPIB0::18::INSTR')
+        list_res = rm.list_resources()
+        #('ASRL1::INSTR', 'ASRL2::INSTR', 'GPIB0::82::INSTR')
+        if list_res is not None:
+            inst = rm.open_resource(list_res[0])
+        else:
+            print('Error: Resources not found, please check connections.')
+            sys.exit(1)
+        #automatically connects to the default resource (first detected)
     except:
         print('Error connecting to the instrument!')
-        sys.exit()
+        sys.exit(1)
     
-    print(inst.query("*IDN?"))
-    print(inst)
+    #print(inst.query("*IDN?"))
+    print("Connected:" + inst)
 
     #Set the default center frequency
     inst.write(':FREQ:CENT 66 MHz')
@@ -63,6 +68,8 @@ def freq_sweep():
     if averaging:
         inst.write('AVER ON')
         inst.write('AVER:COUN 10')
+    else:
+        inst.write('AVER OFF')
 
     for i in range(steps):
         curr_freq = 66 + i * step_freq
@@ -88,5 +95,6 @@ def freq_sweep():
 
 if __name__ == '__main__':
     freq_sweep()
+    print("Success: Frequency sweep ends.")
     sys.exit()
 
