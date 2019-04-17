@@ -1,10 +1,16 @@
+# coding: utf-8
+
 '''
 AUTHOR: MICHAEL ZHOU
-CURRENT VERSION: 1.1
+CURRENT VERSION: 1.2
 MODIFICATION HISTORY:
+    1.2 Added fluctuation test function to detect fluctuation in power for certain frequency
     1.1 Added frequency sweep test function for testing objects
         Added functionality for screenshot and trace data capturing and saving 
     1.0 Added the biasing calibration sweep function to optimize the CMOS gate voltage
+
+    Version 0: Uses Spectrum Analyzer, Voltage Source and Signal Generator
+    Version 1: Uses Spectrum Analyzer and Signal Generator for the frequency sweep
 '''
 
 import visa    #pyvisa library module is REQUIRED to run this program
@@ -157,7 +163,7 @@ class FreqSweep():
 
             #iterate through the frequency range
             for i in range(self.num_step):
-                #special case: if the frequency reaches the higher limit, sweep with the frequency within the range:
+                #special case: if the frequency reaches the limit of the signal generator (70GHz), sweep with the frequency within the range:
                 '''
                 if i + 1 == self.num_step:
                     #TO BE CHECKED LATER
@@ -225,10 +231,12 @@ class FreqSweep():
         self.sa.write(':FREQ:CENT '+ str(self.sa_cent_freq) + ' GHz')
         #Set the market to the center
         self.sa.write('CALC:MARK:CENT')
+        time.sleep(0.5)
 
         #set the number of averaging to be measured in the spectrum analyzer
         self.sa.write('AVER ON')
-        self.sa.write('AVER:COUN 25')
+        time.sleep(0.5)
+        self.sa.write('AVER:COUN 50')
 
         #Initialize the Signal Generator
         curr_freq = self.freq_start
@@ -237,18 +245,22 @@ class FreqSweep():
         self.sg.write(':FREQ:FIX ' + str(self.sweep_freq_start) + ' GHz')
         self.sg.write(':FREQ:STEP ' + str(self.sweep_freq_step) + ' GHz')
 
-        file_name = 'data_3_1_2019_ghz.csv'
+        file_name = 'data_4_12_2019_140-160ghz_run_5_plexiglass.csv'      #change name here -> go to terminal -> up arrow -> hit enter
 
         #open the csv file and record the data
         with open(file_name, 'wb') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter = ',', quotechar = '|')
             csvwriter.writerow(['FREQ','MEAS_PWR'])
 
-            for _ in range(self.num_step):
+            for i in range(self.num_step):
+                '''
+                if i + 1 == self.num_step:
+                    self.sg.write(':FREQ:FIX 69.953 GHz')
+                '''
                 #clearing the average first:
                 self.sa.write('AVER:CLE')
                 #wait for enough seconds to conduct the averaging on the instrument:
-                time.sleep(60)
+                time.sleep(110)
                 #measure the power and store accordingly
                 self.sa.write('CALC:MARK:CENT') 
                 time.sleep(0.5)
@@ -269,11 +281,48 @@ class FreqSweep():
                     csvwriter.writerow(trace_data)
                 
                 #increment frequency
+                if i + 1 == self.num_step:
+                    break
+
                 self.sg.write(':FREQ UP')
-                time.sleep(2)
+                time.sleep(3)
                 self.sa.write('AVER:CLE')
                 curr_freq += self.freq_step
                 curr_sweep_freq += self.sweep_freq_step
+
+    def fluctuation_test(self):
+        #Initialize the spectrum analyzer to frequency to be measured:
+        self.sa.write(':FREQ:CENT '+ str(self.sa_cent_freq) + ' GHz')
+        #Set the market to the center
+        self.sa.write('CALC:MARK:CENT')
+
+        #set the signal generator to a fixed frequency
+        self.sg.write(':FREQ:FIX ' + str(self.sweep_freq_start) + ' GHz')
+
+        #set the averaging to be off
+        self.sa.write('AVER OFF')
+        time.sleep(1)
+
+        file_name = "data_4_15_2019_65ghz_run_2_object4"
+        with open(file_name, 'w') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter = ',', quotechar = '|')
+            csvwriter.writerow(['NUM', 'MEAS_POWER'])
+
+            power_list = []
+            meas_pwr = 0
+            for i in range(500):
+                self.sa.write('CALC:MARK:CENT') 
+                time.sleep(0.5)
+                self.sa.write('CALC:MARK:Y?')
+                time.sleep(0.5)
+                meas_pwr = float(self.sa.read())
+                print(meas_pwr)
+                power_list.append(meas_pwr)
+                csvwriter.writerow([i + 1, meas_pwr])
+                time.sleep(1.5)
+            print("Fluctuation test done! Data stored in CSV successfully.")
+            print(power_list)
+        return
     
     def write_vmap_to_csv(self, mydict):
         with open('freq_volt_map.csv', 'w') as csv_file:
@@ -293,7 +342,7 @@ class FreqSweep():
     def save_screenshot(self, filepath):
         self.sa.write('*CLS')
         try:
-            self.sa.write(':MMEM:STORE:SCR \’' + str(filepath) + '\’;*WAI')           #Stores a copy of the screen on the D: drive of the EXA. 
+            self.sa.write(':MMEM:STORE:SCR \’' + str(filepath) + '\’;*WAI')           #Stores a copy of the screen on the D: drive of the Spectrum Analyzer. 
         except:
             print('Error: screenshot saving failed! Please check filepath and retry!')
             pass
@@ -307,7 +356,7 @@ class FreqSweep():
     def get_trace_data(self):
         self.sa.write('*CLS')
         self.sa.write(':INIT:CONT OFF')
-        self.sa.write(':INIT IMM;*WAI')
+        self.sa.write("INIT:IMM;*WAI")
         time.sleep(5)
         try:
             self.sa.query_ascii_values(':TRAC:DATA? TRACE1')
@@ -318,12 +367,10 @@ class FreqSweep():
 if __name__ == '__main__':
     #Parameters: start frequency, end frequency, mixer multiplier(1/3/18), version(0/1/2), spectrum analyzer center frequency (GHz), Frequency Step, 
     #Screenshot? (True/False), Save Trace Data? (True/False)
-    FS = FreqSweep(260, 260, 3, 1, 0.033, 5, True, True)
+    FS = FreqSweep(65, 160, 1, 1, 0.047, 5, False, False)
     FS.initialize_instrument()
-    #input("Initialization done. Press Enter to continue...")
     #FS.biasing_calibration()
-    #input("Calibration done. Press Enter to continue...")
-    FS.freq_sweep_test()
+    #FS.freq_sweep_test()
     #FS.frequency_sweep()
-    #input("Frequency sweep done. Press Enter to exit...")
+    FS.fluctuation_test()
     sys.exit(0)
